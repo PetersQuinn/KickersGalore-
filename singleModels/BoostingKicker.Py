@@ -1,4 +1,3 @@
-# kicker_train_val_test_fixed.py
 # LightGBM baseline for kicker probabilities
 # - Temporal holdout (latest season) as TEST
 # - 5-fold CV on earlier seasons for hyperparam tuning using Brier score on P(miss)
@@ -28,7 +27,6 @@ CATEGORICAL = ["kicker_player_name"]
 PARQUET = "field_goals_model_ready.parquet"
 CSV = "field_goals_model_ready.csv"
 
-# ---- reporting / calibration config ----
 N_ECE_BINS = 10
 BINS       = (0, 40, 50, 80)  # distance bins for per-range isotonic
 
@@ -65,7 +63,6 @@ def fold_target_encode(train_col, train_y, valid_col, smoothing=20.0):
     return valid_col.map(enc).fillna(prior).values
 
 
-# ------- Isotonic calibration helpers (no test leakage) -------
 
 def fit_isotonic_by_range(x_dist, p, y, bins=BINS):
     """
@@ -144,19 +141,15 @@ def add_encodings(X_tr, X_va, y_tr, cat, num):
 
 def main():
     df = load_df()
-    # -------- test split: hold out latest season --------
     latest_season = int(df["season"].max())
     test = df[df["season"] == latest_season].reset_index(drop=True)
     train = df[df["season"] < latest_season].reset_index(drop=True)
     print(f"Train seasons ≤ {latest_season-1}: {len(train)} rows | Test season {latest_season}: {len(test)} rows")
 
-    # -------- build data (y: 1=miss, 0=make) --------
     X_tr_all, y_tr_all, num, cat = build_xy(train)
     X_te_raw, y_te_miss, _, _ = build_xy(test)  # y_te_miss: 1=miss, 0=make
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
 
-    # -------- Inner-CV tuning: LightGBM (optimize Brier on P(miss)) --------
-    # Expanded search space
     lgb_params_space = {
         "num_leaves":        [15, 31, 63, 95, 127],
         "learning_rate":     [0.01, 0.015, 0.02, 0.03, 0.05],
@@ -171,10 +164,6 @@ def main():
     }
 
     def cv_score_lgb(params, idx=None, total=None):
-        """
-        Return mean Brier on P(miss) (uncalibrated) for a candidate set of params.
-        Prints per-fold scores so progress is visible.
-        """
         briers = []
         for fold_id, (tr_idx, va_idx) in enumerate(
             skf.split(X_tr_all, y_tr_all), start=1
