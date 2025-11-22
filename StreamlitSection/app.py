@@ -280,7 +280,7 @@ def build_input_form():
 
         with c1:
             distance = st.number_input(
-                "Kick distance (yards)", min_value=15, max_value=70,
+                "Kick distance (yards)", min_value=15, max_value=90,
                 value=45, step=1
             )
             altitude = st.number_input(
@@ -294,11 +294,11 @@ def build_input_form():
 
         with c2:
             temp = st.number_input(
-                "Temperature (°F)", min_value=-10, max_value=120,
+                "Temperature (°F)", min_value=-40, max_value=120,
                 value=50, step=1
             )
             wind = st.number_input(
-                "Wind speed (mph)", min_value=0, max_value=40,
+                "Wind speed (mph)", min_value=0, max_value=70,
                 value=5, step=1
             )
 
