@@ -37,7 +37,6 @@ CATEGORICAL = ["kicker_player_name"]
 PARQUET = "field_goals_model_ready.parquet"
 CSV = "field_goals_model_ready.csv"
 
-# ---- reporting / calibration config ----
 N_ECE_BINS = 10
 BINS = (0, 40, 50, 80)  # distance bins for per-range isotonic
 
@@ -54,10 +53,6 @@ def load_df():
 
 
 def compute_sw(y):
-    """
-    Class-balancing sample weights; y: 1=miss, 0=make.
-    (Not used directly by BART, but kept for consistency / potential reuse.)
-    """
     y = pd.Series(y)
     cnt = y.value_counts()
     tot = len(y)
@@ -65,9 +60,6 @@ def compute_sw(y):
 
 
 def fold_target_encode(train_col, train_y, valid_col, smoothing=20.0):
-    """
-    train_y: 1=miss, 0=make → encode miss rate per kicker.
-    """
     miss = (train_y == 1).astype(int)
     prior = miss.mean()
     g = (
@@ -79,15 +71,8 @@ def fold_target_encode(train_col, train_y, valid_col, smoothing=20.0):
     return valid_col.map(enc).fillna(prior).values
 
 
-# ------- Isotonic calibration helpers (no test leakage) -------
 
 def fit_isotonic_by_range(x_dist, p, y, bins=BINS):
-    """
-    Fit per-distance-bin isotonic calibrators.
-    x_dist: kick_distance
-    p: predicted probabilities (here P(miss))
-    y: true labels (1=miss, 0=make)
-    """
     irs = {}
     for lo, hi in zip(bins[:-1], bins[1:]):
         m = (x_dist >= lo) & (x_dist < hi)
@@ -109,10 +94,6 @@ def apply_isotonic_by_range(x_dist, p, irs, bins=BINS):
 
 
 def ece_score(probs, y, n_bins=N_ECE_BINS):
-    """
-    Expected Calibration Error.
-    probs: P(make), y: 1=make, 0=miss
-    """
     bins = np.linspace(0, 1, n_bins + 1)
     e = 0.0
     N = len(y)
@@ -125,11 +106,6 @@ def ece_score(probs, y, n_bins=N_ECE_BINS):
 
 
 def build_xy(df):
-    """
-    Returns:
-        X: features
-        y: target (1=miss, 0=make) for BART training
-    """
     y_make = df[TARGET].astype(int).values  # 1=make, 0=miss
     y = (1 - y_make).astype(int)  # 1=miss, 0=make
     X = df.drop(columns=[TARGET]).copy()
@@ -139,9 +115,6 @@ def build_xy(df):
 
 
 def add_encodings(X_tr, X_va, y_tr, cat, num):
-    """
-    Add kicker target encoding (miss rate) and ordinal id, then select numeric+TE+id.
-    """
     X_tr = X_tr.copy()
     X_va = X_va.copy()
     # target encoding for kicker miss rate
@@ -158,7 +131,6 @@ def add_encodings(X_tr, X_va, y_tr, cat, num):
 
 def main():
     df = load_df()
-    # -------- test split: hold out latest season --------
     latest_season = int(df["season"].max())
     test = df[df["season"] == latest_season].reset_index(drop=True)
     train = df[df["season"] < latest_season].reset_index(drop=True)
@@ -167,13 +139,9 @@ def main():
         f"Test season {latest_season}: {len(test)} rows"
     )
 
-    # -------- build data (y: 1=miss, 0=make) --------
     X_tr_all, y_tr_all, num, cat = build_xy(train)
     X_te_raw, y_te_miss, _, _ = build_xy(test)  # y_te_miss: 1=miss, 0=make
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
-
-    # -------- Inner-CV tuning: BART (optimize Brier on P(miss)) --------
-    # BART is expensive → keep candidate count moderate but deeper than before.
     bart_params = {
         "n_trees":   [50, 75, 100, 150, 200],
         "n_samples": [100, 150, 200, 300],
@@ -182,10 +150,6 @@ def main():
     }
 
     def cv_score_bart(params, idx=None, total=None):
-        """
-        Return mean Brier on P(miss) (uncalibrated posterior mean from BART).
-        Prints per-fold Brier so you can monitor progress.
-        """
         briers = []
         for fold_id, (tr_idx, va_idx) in enumerate(skf.split(X_tr_all, y_tr_all), start=1):
             Xtr, Xva = X_tr_all.iloc[tr_idx], X_tr_all.iloc[va_idx]
@@ -193,7 +157,6 @@ def main():
 
             Xtr_enc, Xva_enc = add_encodings(Xtr, Xva, ytr, cat, num)
 
-            # BART treats this as regression on {0,1}; we treat mean prediction as P(miss).
             model = SklearnModel(
                 sublist=None,
                 n_trees=int(params["n_trees"]),
@@ -201,11 +164,10 @@ def main():
                 n_samples=int(params["n_samples"]),
                 n_burn=int(params["n_burn"]),
                 thin=float(params["thin"]),
-                n_jobs=1,  # avoid Windows resource issues
+                n_jobs=1,  
             )
             model.fit(Xtr_enc.values, ytr)
             p_miss = model.predict(Xva_enc.values)
-            # Safety: clip to (0,1) for Brier + isotonic
             p_miss = np.clip(p_miss, 1e-6, 1.0 - 1e-6)
             fold_brier = brier_score_loss(yva, p_miss)
             briers.append(fold_brier)
@@ -239,7 +201,6 @@ def main():
         )
     print("\nBest BART params (by Brier on P(miss)):", best_params)
 
-    # -------- OOF pass to fit global isotonic calibrators (train only) --------
     oof_p_miss = np.zeros(len(train))
     oof_y_miss = y_tr_all.copy()  # 1=miss, 0=make
     oof_dist = train["kick_distance"].values
@@ -257,27 +218,25 @@ def main():
             n_samples=int(best_params["n_samples"]),
             n_burn=int(best_params["n_burn"]),
             thin=float(best_params["thin"]),
-            n_jobs=1,  # avoid Windows resource issues
+            n_jobs=1, 
         )
         m.fit(Xtr_enc.values, ytr)
         preds = m.predict(Xva_enc.values)
         preds = np.clip(preds, 1e-6, 1.0 - 1e-6)
         oof_p_miss[va_idx] = preds
 
-    # calibrate P(miss) by distance
     irs_global = fit_isotonic_by_range(oof_dist, oof_p_miss, oof_y_miss, bins=BINS)
     oof_p_miss_cal = apply_isotonic_by_range(
         oof_dist, oof_p_miss, irs_global, bins=BINS
     )
-    # OOF Brier on P(miss)
+
     oof_brier_miss = brier_score_loss(oof_y_miss, oof_p_miss_cal)
     print(
         f"OOF Brier after per-distance isotonic calibration (P(miss)): "
         f"{oof_brier_miss:.5f}"
     )
 
-    # -------- Train on ALL train with best params; evaluate on TEST --------
-    # Encodings: fit on train, transform test (no leakage)
+
     Xtr_enc, _ = add_encodings(X_tr_all, X_tr_all, y_tr_all, cat, num)
 
     test_enc = test.copy()
@@ -297,7 +256,7 @@ def main():
         n_samples=int(best_params["n_samples"]),
         n_burn=int(best_params["n_burn"]),
         thin=float(best_params["thin"]),
-        n_jobs=1,  # avoid Windows resource issues
+        n_jobs=1,  
     )
     final.fit(Xtr_enc.values, y_tr_all)
     pte_miss_raw = final.predict(Xte_enc.values)
@@ -313,7 +272,7 @@ def main():
     y_te_make = 1 - y_te_miss  # 1=make, 0=miss
     pte_make = 1.0 - pte_miss
 
-    # --- Probability distribution diagnostics on TEST ---
+
     p_make_miss = pte_make[y_te_make == 0]  # predicted P(make) for true misses
     p_make_make = pte_make[y_te_make == 1]  # predicted P(make) for true makes
 
@@ -338,7 +297,6 @@ def main():
         frac = np.mean(p_make_miss < t)
         print(f"Fraction of MISSES with P(make) < {t:.2f}: {frac:.3f}")
 
-    # ---- reporting (ranking + calibration + simple decision) ----
     # Brier on P(make) (equivalent to Brier on P(miss))
     brier = brier_score_loss(y_te_make, pte_make)
     # AUC on P(make) vs y_make
