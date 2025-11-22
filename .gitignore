@@ -1,0 +1,14 @@
+feature_importance_lgbm_cv_mean.csv
+field_goals_model_ready.csv
+metrics_bagging_boosting_imbalanced_cv.csv
+test.py
+kick_distance_histogram.png
+model_probs/probs_bagging.csv
+model_probs/probs_bart.csv
+model_probs/probs_gam.csv
+model_probs/probs_lgbm.csv
+model_probs/probs_bayes_lr.csv
+stack_meta/meta_lr_results.csv
+model_probs/probs_lr.csv
+stack_meta/stack_train.csv
+stack_meta/stack_test.csv
