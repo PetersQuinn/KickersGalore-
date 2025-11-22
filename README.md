@@ -131,24 +131,6 @@ Models give **probability**, not truth. They support decision-making—but human
 
 ---
 
-## **🧪 Demo Script**
-
-Run predictions for any kick scenario:
-
-```
-python kicker_demo_model.py
-```
-
-Outputs calibrated probabilities for:
-
-* Bagging
-* LightGBM
-* GAM
-* Logistic Regression
-* **Weighted Ensemble (final model)**
-
----
-
 ## **📚 Technologies Used**
 
 * Python (NumPy, Pandas)
@@ -165,7 +147,8 @@ Outputs calibrated probabilities for:
 
 **Quinn Peters**
 Duke University
-Risk, Data, and Financial Engineering
+Bachelor's in Risk, Data, and Financial Engineering 
+Master's in Financial Technology (Focus in ML)
 Machine Learning · Sports Analytics · Decision Science
 
 ---
