@@ -110,7 +110,7 @@ FEATURE_COLS = [
 ]
 
 TARGET_COL = "field_goal_result_binary"
-CATEGORICAL_COLS = ["kicker_player_name"]
+CATEGORICAL_COLS = []
 
 # Best weighted ensemble from your search:
 ENSEMBLE_WEIGHTS = {
