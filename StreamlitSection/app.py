@@ -92,9 +92,7 @@ class WeightedEnsemble(BaseEstimator, ClassifierMixin):
 
 
 FEATURE_COLS = [
-    "season",
     "score_differential",
-    "kicker_player_name",
     "kick_distance",
     "temp",
     "wind",
