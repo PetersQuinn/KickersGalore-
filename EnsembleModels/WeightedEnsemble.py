@@ -1,10 +1,4 @@
-# kicker_weighted_ensembles.py
 # Full weighted ensemble search over 6 tuned, calibrated models.
-#
-# Assumes you already saved per-model TEST predictions as CSVs with:
-#   - a common "fg_id" or index identifying each kick (we'll use index)
-#   - column "y_te"  : 1=make, 0=miss
-#   - column "p_make"  : calibrated P(make) for that model
 #
 # Expected filenames (in MODEL_PRED_DIR):
 #   pred_bagging.csv
@@ -30,11 +24,11 @@ from sklearn.metrics import (
     brier_score_loss,
 )
 
-# ---------------- config ----------------
 
-MODEL_PRED_DIR = Path("model_probs")  # folder where your per-model CSVs live
-GRID_STEP = 0.05                      # weight step; 0.05 -> weights in {0,0.05,...,1.0}
-TOP_K = 20                            # how many best ensembles to print
+
+MODEL_PRED_DIR = Path("model_probs")  
+GRID_STEP = 0.05                     
+TOP_K = 20                          
 N_ECE_BINS = 10                       # for calibration
 
 # Model names and corresponding CSV filenames
@@ -48,13 +42,9 @@ MODEL_SPECS = {
 }
 
 
-# ---------------- helpers ----------------
 
 def ece_score(probs, y, n_bins=N_ECE_BINS):
-    """
-    Expected Calibration Error (ECE).
-    probs: P(make), y: 1=make, 0=miss
-    """
+
     probs = np.asarray(probs, dtype=float)
     y = np.asarray(y, dtype=int)
 
@@ -70,10 +60,7 @@ def ece_score(probs, y, n_bins=N_ECE_BINS):
 
 
 def load_all_model_preds():
-    """
-    Load all per-model prediction CSVs and merge into a single DataFrame.
-    Assumes each file has columns ['y_te', 'p_make'] and identical row order.
-    """
+
     data = None
     model_cols = {}
 
@@ -104,20 +91,13 @@ def load_all_model_preds():
 
 
 def generate_weight_tuples(n_models, grid_step=GRID_STEP):
-    """
-    Generate all non-negative weight vectors of length n_models with
-    components in {0, grid_step, 2*grid_step, ..., 1.0} that sum to 1.0.
-    Uses integer compositions: let TOTAL = 1 / grid_step, each weight = k_i / TOTAL.
-    """
+
     total = int(round(1.0 / grid_step))
-    # We produce all integer tuples (k0,...,k_{n-1}) with sum=k_total
-    # Here n_models = 6, but we keep it general.
+
     if n_models == 1:
         yield (1.0,)
         return
 
-    # recursive / iterative composition generator
-    # We'll do an iterative nested loop with pruning using indices.
     def rec(prefix, remaining, slots_left):
         if slots_left == 1:
             # last slot gets whatever is left
@@ -133,20 +113,13 @@ def generate_weight_tuples(n_models, grid_step=GRID_STEP):
 
 
 def evaluate_ensemble(y_te, P, weights, model_order):
-    """
-    y_te: array of shape (N,) with 1=make, 0=miss
-    P: dict model_name -> array of P(make) shape (N,)
-    weights: tuple of floats, same order as model_order
-    """
-    # build ensemble probs
+
     p_ens = np.zeros_like(y_te, dtype=float)
     for w, name in zip(weights, model_order):
         if w == 0.0:
             continue
         p_ens += w * P[name]
 
-    # metrics
-    # Brier on P(make)
     brier = brier_score_loss(y_te, p_ens)
     auc = roc_auc_score(y_te, p_ens)
 
@@ -176,8 +149,6 @@ def evaluate_ensemble(y_te, P, weights, model_order):
     }
 
 
-# ---------------- main ----------------
-
 def main():
     print("Loading per-model predictions...")
     df, model_cols = load_all_model_preds()
@@ -198,11 +169,7 @@ def main():
     n_models = len(model_order)
 
     for weights in generate_weight_tuples(n_models, GRID_STEP):
-        # optionally skip degenerate "single-model" ensembles if you want
-        # but for now we keep them; they help sanity-check that the search
-        # can recover single-model performance when weight=1 on one model.
         metrics = evaluate_ensemble(y_te, P, weights, model_order)
-        # store summary, but keep p_ens only for the best later
         results.append({
             "weights": weights,
             "ensemble_name": "ENS[" + "+".join(
@@ -230,7 +197,6 @@ def main():
             f"{r['brier']:.5f} | {r['auc']:.4f} | {r['pr_miss']:.4f} | {r['ece10']:.4f}"
         )
 
-    # Best ensemble diagnostics
     best = results_sorted[0]
     best_weights = best["weights"]
     best_metrics = evaluate_ensemble(y_te, P, best_weights, model_order)
@@ -256,7 +222,6 @@ def main():
     print("Threshold for confusion matrix (on P(make)): 0.50")
     print(f"Confusion matrix (1=make, 0=miss): tn={tn} fp={fp} fn={fn} tp={tp}")
 
-    # Probability diagnostics similar to earlier scripts
     y_te_make = y_te  # 1=make, 0=miss
     p_make = p_ens
 
