@@ -1,19 +1,16 @@
-# kicker_bell_curves_from_summaries.py
 # Quick & dirty "bell curve" visuals from summary stats only.
 # For each model, we approximate:
 #   P(make | true miss) ~ Normal(mean_miss, std_miss)
 #   P(make | true make) ~ Normal(mean_make, std_make)
 # truncated to [0, 1].
 #
-# This is *only* a loose visual – not using the raw probabilities.
+# This is a loose visual (not using the raw probabilities)
 
 import os
 import numpy as np
 import matplotlib.pyplot as plt
 
 OUT_DIR = "bell_curves_from_summaries"
-
-# ---- hard-coded summary stats (means & stds) ----
 # All are for P(make) on TEST
 
 MODEL_STATS = {
@@ -56,7 +53,6 @@ MODEL_STATS = {
 }
 
 def normal_pdf(x, mean, std):
-    """Plain Normal pdf; x, mean, std are floats/arrays."""
     std = max(std, 1e-6)  # defensive
     return (1.0 / (std * np.sqrt(2.0 * np.pi))) * np.exp(-0.5 * ((x - mean) / std) ** 2)
 
@@ -72,7 +68,7 @@ def main():
         make_mu = stats["make_mean"]
         make_sd = stats["make_std"]
 
-        # Compute (unnormalized, truncated) pdfs on [0,1]
+        # Compute pdfs on [0,1]
         y_miss = normal_pdf(x, miss_mu, miss_sd)
         y_make = normal_pdf(x, make_mu, make_sd)
 

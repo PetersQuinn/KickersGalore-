@@ -1,6 +1,3 @@
-# kicker_prob_hist_all_models.py
-#
-# One-stop script:
 # - Load field_goals_model_ready.(parquet/csv)
 # - Hold out latest season as TEST
 # - For each tuned model:
@@ -39,8 +36,6 @@ import lightgbm as lgb
 from pygam import LogisticGAM
 from gbart.modified_bartpy.sklearnmodel import SklearnModel
 
-# ----------------- CONFIG -----------------
-
 RANDOM_STATE = 42
 TARGET = "field_goal_result_binary"  # 1=make, 0=miss
 CATEGORICAL = ["kicker_player_name"]
@@ -48,10 +43,10 @@ PARQUET = "field_goals_model_ready.parquet"
 CSV = "field_goals_model_ready.csv"
 
 N_ECE_BINS = 10
-BINS = (0, 40, 50, 80)  # distance bins for per-range isotonic
+BINS = (0, 40, 50, 80)  
 N_FOLDS = 5
 
-# Tuned hyperparameters you provided
+# Tuned hyperparameters
 BAGGING_BEST = {
     "n_estimators": 600,
     "max_depth": None,
@@ -93,8 +88,6 @@ LR_BEST_C = 0.00126743
 OUT_DIR = "prob_histograms"
 
 
-# ----------------- COMMON HELPERS -----------------
-
 def load_df():
     if Path(PARQUET).exists():
         try:
@@ -107,10 +100,6 @@ def load_df():
 
 
 def compute_sw(y):
-    """
-    Class-balancing sample weights.
-    y can be 0/1 with either convention; weights just equalize classes.
-    """
     y = pd.Series(y)
     cnt = y.value_counts()
     tot = len(y)
@@ -118,10 +107,6 @@ def compute_sw(y):
 
 
 def fold_target_encode_miss(train_col, train_y_miss, valid_col, smoothing=20.0):
-    """
-    Target encoding using miss rate per kicker.
-    train_y_miss: 1=miss, 0=make.
-    """
     miss = (train_y_miss == 1).astype(int)
     prior = miss.mean()
     g = (
@@ -134,10 +119,6 @@ def fold_target_encode_miss(train_col, train_y_miss, valid_col, smoothing=20.0):
 
 
 def fold_target_encode_from_make(train_col, train_y_make, valid_col, smoothing=20.0):
-    """
-    Used for LR/Bayes-LR where y is 1=make, 0=miss.
-    We still encode miss rate per kicker.
-    """
     miss = (train_y_make == 0).astype(int)
     prior = miss.mean()
     g = (
@@ -150,12 +131,6 @@ def fold_target_encode_from_make(train_col, train_y_make, valid_col, smoothing=2
 
 
 def fit_isotonic_by_range(x_dist, p, y, bins=BINS):
-    """
-    Fit per-distance-bin isotonic calibrators.
-    x_dist: kick_distance
-    p: predicted probabilities (P(event) with y=1)
-    y: 0/1 labels matching p
-    """
     irs = {}
     for lo, hi in zip(bins[:-1], bins[1:]):
         m = (x_dist >= lo) & (x_dist < hi)
@@ -177,9 +152,6 @@ def apply_isotonic_by_range(x_dist, p, irs, bins=BINS):
 
 
 def safe_probs(p, fallback_len):
-    """
-    Ensure probabilities are finite and in (0,1). If not, fall back to 0.5.
-    """
     p = np.asarray(p).ravel()
     if p.shape[0] != fallback_len or not np.all(np.isfinite(p)):
         return np.full(fallback_len, 0.5, dtype=float)
@@ -187,11 +159,6 @@ def safe_probs(p, fallback_len):
 
 
 def plot_hist(model_name, p_make, y_true, out_dir=OUT_DIR):
-    """
-    Histogram of P(make) for true misses vs makes.
-    X-axis: 0–1 in 0.01 bins
-    Y-axis: frequency
-    """
     os.makedirs(out_dir, exist_ok=True)
     bins = np.linspace(0.0, 1.0, 101)  # 0.01-wide
 
@@ -231,8 +198,6 @@ def plot_hist(model_name, p_make, y_true, out_dir=OUT_DIR):
 
     print(f"[PLOT] Saved histogram for {model_name}: {out_path}")
 
-
-# ----------------- MODEL-SPECIFIC RUNNERS -----------------
 
 def build_xy_miss(df):
     """
@@ -748,8 +713,6 @@ def run_logreg(train, test):
     pte = np.clip(pte, 1e-6, 1.0 - 1e-6)
     return pte, y_te
 
-
-# ----------------- MAIN -----------------
 
 def main():
     df = load_df()

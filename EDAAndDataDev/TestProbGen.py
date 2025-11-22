@@ -1,6 +1,4 @@
-# kicker_save_probs_all_models.py
-#
-# Re-train tuned models, calibrate, and save TEST probabilities for ensembling.
+#Re-train tuned models, calibrate, and save TEST probabilities for ensembling.
 # Outputs:
 #   model_probs/probs_bagging.csv
 #   model_probs/probs_bayes_lr.csv
@@ -31,9 +29,6 @@ import lightgbm as lgb
 from pygam import LogisticGAM
 from gbart.modified_bartpy.sklearnmodel import SklearnModel
 
-# ---------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------
 
 RANDOM_STATE = 42
 TARGET = "field_goal_result_binary"  # 1=make, 0=miss
@@ -48,10 +43,6 @@ BINS = (0, 40, 50, 80)  # distance bins for per-range isotonic
 OUT_DIR = Path("model_probs")
 OUT_DIR.mkdir(exist_ok=True)
 
-# ---------------------------------------------------------------------
-# Shared helpers
-# ---------------------------------------------------------------------
-
 
 def load_df():
     if Path(PARQUET).exists():
@@ -65,9 +56,6 @@ def load_df():
 
 
 def compute_sw(y):
-    """
-    Class-balancing sample weights for binary labels in {0,1}.
-    """
     y = pd.Series(y)
     cnt = y.value_counts()
     tot = len(y)
@@ -75,9 +63,6 @@ def compute_sw(y):
 
 
 def fold_te_from_miss(train_col, y_miss, valid_col, smoothing=20.0):
-    """
-    Target encoding for kicker miss rate when y_miss: 1=miss, 0=make.
-    """
     miss = (y_miss == 1).astype(int)
     prior = miss.mean()
     g = (
@@ -90,9 +75,6 @@ def fold_te_from_miss(train_col, y_miss, valid_col, smoothing=20.0):
 
 
 def fold_te_from_make(train_col, y_make, valid_col, smoothing=20.0):
-    """
-    Target encoding for kicker miss rate when y_make: 1=make, 0=miss.
-    """
     miss = (y_make == 0).astype(int)
     prior = miss.mean()
     g = (
@@ -105,13 +87,6 @@ def fold_te_from_make(train_col, y_make, valid_col, smoothing=20.0):
 
 
 def fit_isotonic_by_range(x_dist, p, y, bins=BINS):
-    """
-    Fit per-distance-bin isotonic calibrators.
-
-    x_dist: kick_distance
-    p: predicted probabilities
-    y: true labels for that probability (same semantics as p)
-    """
     irs = {}
     for lo, hi in zip(bins[:-1], bins[1:]):
         m = (x_dist >= lo) & (x_dist < hi)
@@ -155,18 +130,13 @@ def build_xy_make(df):
     return X, y_make, num, cat
 
 
-# ---------------------------------------------------------------------
-# Bagging (DecisionTree + BaggingClassifier; tuned params)
-# ---------------------------------------------------------------------
-
-
 def save_probs_bagging(train, test):
     print("\n[Bagging] Fitting + calibrating...")
     X_tr_all, y_tr_all, num, cat = build_xy_miss(train)
     X_te_raw, y_te_miss, _, _ = build_xy_miss(test)
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
 
-    # tuned params you gave
+    # tuned params
     bag_params = dict(
         n_estimators=600,
         max_depth=None,
@@ -265,11 +235,6 @@ def save_probs_bagging(train, test):
     print("[Bagging] Saved to", OUT_DIR / "probs_bagging.csv")
 
 
-# ---------------------------------------------------------------------
-# Bayes-style Logistic Regression (just LR with tuned C)
-# ---------------------------------------------------------------------
-
-
 def _save_probs_logistic_like(train, test, C, out_name):
     """
     Shared logistic-style pipeline: TE + StandardScaler + LR on y_make.
@@ -353,10 +318,6 @@ def save_probs_lr(train, test):
     # Tuned: C=0.00126743
     _save_probs_logistic_like(train, test, C=0.00126743, out_name="probs_lr.csv")
 
-
-# ---------------------------------------------------------------------
-# LightGBM (tuned params)
-# ---------------------------------------------------------------------
 
 
 def save_probs_lgbm(train, test):
@@ -484,11 +445,6 @@ def _lgbm_add_encodings(X_tr, X_va, y_tr, num, cat):
     return X_tr[use], X_va[use]
 
 
-# ---------------------------------------------------------------------
-# GAM (pygam LogisticGAM, tuned lam / n_splines)
-# ---------------------------------------------------------------------
-
-
 def save_probs_gam(train, test):
     print("\n[GAM] Fitting + calibrating...")
     X_tr_all, y_tr_all, num, cat = build_xy_miss(train)
@@ -581,10 +537,6 @@ def _gam_add_te_and_scale(X_tr, X_va, y_tr, num_cols, cat):
     return Xtr_mat, Xva_mat, use_cols, scaler
 
 
-# ---------------------------------------------------------------------
-# BART (gbart SklearnModel, tuned params)
-# ---------------------------------------------------------------------
-
 
 def save_probs_bart(train, test):
     print("\n[BART] Fitting + calibrating (this may be slow)...")
@@ -675,11 +627,6 @@ def _bart_add_encodings(X_tr, X_va, y_tr, num, cat):
     X_va["kicker_id"] = enc.transform(X_va[[cat]]).astype("int64")
     use = num + ["kicker_te", "kicker_id"]
     return X_tr[use], X_va[use]
-
-
-# ---------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------
 
 
 def main():
