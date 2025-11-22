@@ -1,9 +1,8 @@
-# kicker_bayes_logreg_baseline.py
 # "Bayesian" (bootstrap-ensemble) logistic regression baseline for kicker probabilities
 # - Temporal holdout (latest season) as TEST
 # - 5-fold CV on earlier seasons for hyperparam tuning using Brier score on P(make)
 # - Each model in CV and final fit is an ensemble of bootstrapped LogisticRegression models
-#   → approximates posterior predictive averaging over coefficient uncertainty
+# - approximates posterior predictive averaging over coefficient uncertainty
 # - Per-distance isotonic calibration fit on TRAIN OOF predictions only (no test leakage)
 # - Fixed threshold 0.5 on calibrated P(make) for confusion matrix
 # - Final report on TEST:
@@ -31,14 +30,10 @@ CATEGORICAL = ["kicker_player_name"]
 PARQUET = "field_goals_model_ready.parquet"
 CSV = "field_goals_model_ready.csv"
 
-# ---- calibration + ECE config ----
 N_ECE_BINS = 10
-BINS = (0, 40, 50, 80)  # distance bins for per-range isotonic
-
-# number of bootstrap replicates for the Bayesian-style ensemble
+BINS = (0, 40, 50, 80)   
 N_BOOTSTRAP = 10
 
-# ---------------- helpers ----------------
 
 def load_df():
     if Path(PARQUET).exists():
@@ -59,7 +54,6 @@ def compute_sw(y):
 
 
 def fold_target_encode(train_col, train_y, valid_col, smoothing=20.0):
-    # train_y: 1=make, 0=miss → encode miss rate per kicker
     miss = (train_y == 0).astype(int)
     prior = miss.mean()
     g = (
@@ -129,8 +123,6 @@ def add_te_and_scale(X_tr, X_va, y_tr, num_cols, cat):
     return Xtr_mat, Xva_mat, use_cols, scaler
 
 
-# -------- Bayesian-style bootstrap helpers --------
-
 def fit_bootstrap_logreg(
     X,
     y,
@@ -140,10 +132,6 @@ def fit_bootstrap_logreg(
     n_bootstrap=N_BOOTSTRAP,
     random_state=RANDOM_STATE,
 ):
-    """
-    Fit an ensemble of LogisticRegression models on bootstrap samples.
-    Returns a list of fitted models.
-    """
     rng = np.random.RandomState(random_state)
     X = np.asarray(X)
     y = np.asarray(y)
@@ -177,7 +165,6 @@ def predict_bootstrap(models, X):
     return np.mean(probs, axis=0)
 
 
-# ---------------- main ----------------
 
 def main():
     df = load_df()
@@ -193,7 +180,6 @@ def main():
     X_te_raw, y_te, _, _ = build_xy(test)               # y_te: 1=make, 0=miss
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
 
-    # ---- hyperparam search space (log-scale C + penalty choice) ----
     C_grid = np.logspace(-3, 1, 30)  # 0.001 → 10 in log steps
     penalties = ["l1", "l2"]
 
@@ -244,7 +230,6 @@ def main():
                 )
         return float(np.mean(briers))
 
-    # ---- random search over candidates ----
     for i, params in enumerate(candidates, start=1):
         s = cv_score_bayes(params, idx=i, total=N_CANDIDATES)
         if s < best_brier:
@@ -259,7 +244,6 @@ def main():
 
     print("\nBest Bayes-LR params (by Brier on P(make)):", best_params)
 
-    # ---- OOF pass with best params for global isotonic calibrators ----
     oof_p = np.zeros(len(train))      # raw P(make) from bootstrap ensemble
     oof_y = y_tr_all.copy()           # 1=make, 0=miss
     oof_dist = train["kick_distance"].values
@@ -279,7 +263,7 @@ def main():
             n_bootstrap=N_BOOTSTRAP,
             random_state=RANDOM_STATE + 1000 + fold_id,
         )
-        oof_p[va_idx] = predict_bootstrap(models, Xva_mat)  # P(make)
+        oof_p[va_idx] = predict_bootstrap(models, Xva_mat)  
 
     irs_global = fit_isotonic_by_range(oof_dist, oof_p, oof_y, bins=BINS)
     oof_p_cal = apply_isotonic_by_range(oof_dist, oof_p, irs_global, bins=BINS)
@@ -289,12 +273,9 @@ def main():
         f"{oof_brier:.5f}"
     )
 
-    # ---- Train on ALL train; transform TEST and evaluate ----
-    # Fit scaler/TE on all train, apply to test
     Xtr_mat_all, _, use_cols, scaler = add_te_and_scale(
         X_tr_all, X_tr_all, y_tr_all, num, cat
     )
-    # Build test TE using train mapping
     test_enc = test.copy()
     test_enc["kicker_te"] = fold_target_encode(
         train[cat], pd.Series(y_tr_all), test[cat]
@@ -318,7 +299,6 @@ def main():
         test["kick_distance"].values, pte_raw, irs_global, bins=BINS
     )  # calibrated P(make)
 
-    # --- Probability distribution diagnostics on TEST ---
     p_make_miss = pte[y_te == 0]  # predicted P(make) for true misses
     p_make_make = pte[y_te == 1]  # predicted P(make) for true makes
 
@@ -343,11 +323,9 @@ def main():
         frac = np.mean(p_make_miss < t)
         print(f"Fraction of MISSES with P(make) < {t:.2f}: {frac:.3f}")
 
-    # fixed threshold at 0.5 for confusion matrix on P(make)
     thr = 0.5
     yhat = (pte >= thr).astype(int)
 
-    # ---- reporting ----
     # Brier on P(make)
     brier = brier_score_loss(y_te, pte)
     # AUC on P(make) vs y (1=make)
