@@ -364,9 +364,7 @@ def build_input_form():
     # Build 1-row DataFrame in the exact column order
     row = pd.DataFrame(
         [{
-            "season": int(season),
             "score_differential": float(score_diff),
-            "kicker_player_name": kicker_name,
             "kick_distance": float(distance),
             "temp": float(temp),
             "wind": float(wind),
@@ -447,8 +445,7 @@ def main():
                 f"""
                 **Interpretation**
 
-                Given a **{int(input_df['kick_distance'].iloc[0])}-yard** attempt by 
-                **{input_df['kicker_player_name'].iloc[0]}** with the selected conditions, 
+                Given a **{int(input_df['kick_distance'].iloc[0])}-yard** attempt
                 this model estimates roughly a **{p_make*100:.1f}%** chance of a make.
 
                 Remember: this is a **probabilistic** model, not a guarantee. 
