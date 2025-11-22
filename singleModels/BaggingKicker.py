@@ -24,7 +24,7 @@ from sklearn.ensemble import BaggingClassifier
 from sklearn.tree import DecisionTreeClassifier
 
 RANDOM_STATE = 42
-TARGET = "field_goal_result_binary"  # 1=make, 0=miss
+TARGET = "field_goal_result_binary"  
 CATEGORICAL = ["kicker_player_name"]
 PARQUET = "field_goals_model_ready.parquet"
 CSV = "field_goals_model_ready.csv"
@@ -46,7 +46,6 @@ def load_df():
 
 
 def compute_sw(y):
-    # class-balancing sample weights; y: 1=miss, 0=make
     y = pd.Series(y)
     cnt = y.value_counts()
     tot = len(y)
@@ -54,7 +53,6 @@ def compute_sw(y):
 
 
 def fold_target_encode(train_col, train_y, valid_col, smoothing=20.0):
-    # train_y: 1=miss, 0=make → encode miss rate per kicker
     miss = (train_y == 1).astype(int)
     prior = miss.mean()
     g = (
@@ -64,9 +62,6 @@ def fold_target_encode(train_col, train_y, valid_col, smoothing=20.0):
     )
     enc = (g["count"] * g["mean"] + smoothing * prior) / (g["count"] + smoothing)
     return valid_col.map(enc).fillna(prior).values
-
-
-# ------- Isotonic calibration helpers (no test leakage) -------
 
 def fit_isotonic_by_range(x_dist, p, y, bins=BINS):
     """
@@ -78,7 +73,7 @@ def fit_isotonic_by_range(x_dist, p, y, bins=BINS):
     irs = {}
     for lo, hi in zip(bins[:-1], bins[1:]):
         m = (x_dist >= lo) & (x_dist < hi)
-        if m.sum() > 50:  # need enough data per bin
+        if m.sum() > 50: 
             ir = IsotonicRegression(out_of_bounds="clip")
             ir.fit(p[m], y[m])
             irs[(lo, hi)] = ir
@@ -96,10 +91,6 @@ def apply_isotonic_by_range(x_dist, p, irs, bins=BINS):
 
 
 def ece_score(probs, y, n_bins=N_ECE_BINS):
-    """
-    Expected Calibration Error.
-    probs: P(make), y: 1=make, 0=miss
-    """
     bins = np.linspace(0, 1, n_bins + 1)
     e = 0.0
     N = len(y)
@@ -112,13 +103,8 @@ def ece_score(probs, y, n_bins=N_ECE_BINS):
 
 
 def build_xy(df):
-    """
-    Returns:
-        X: features
-        y: target (1=miss, 0=make)
-    """
-    y_make = df[TARGET].astype(int).values  # 1=make, 0=miss
-    y = (1 - y_make).astype(int)           # 1=miss, 0=make
+    y_make = df[TARGET].astype(int).values  
+    y = (1 - y_make).astype(int)          
     X = df.drop(columns=[TARGET]).copy()
     num = [c for c in X.columns if c not in CATEGORICAL]
     cat = CATEGORICAL[0]
@@ -126,15 +112,10 @@ def build_xy(df):
 
 
 def add_encodings(X_tr, X_va, y_tr, cat, num):
-    """
-    Add kicker target encoding (miss rate) and ordinal id, then select numeric+TE+id.
-    """
     X_tr = X_tr.copy()
     X_va = X_va.copy()
-    # target encoding for kicker miss rate
     X_tr["kicker_te"] = fold_target_encode(X_tr[cat], pd.Series(y_tr), X_tr[cat])
     X_va["kicker_te"] = fold_target_encode(X_tr[cat], pd.Series(y_tr), X_va[cat])
-    # ordinal encoding for kicker id
     enc = OrdinalEncoder(handle_unknown="use_encoded_value", unknown_value=-1)
     enc.fit(X_tr[[cat]])
     X_tr["kicker_id"] = enc.transform(X_tr[[cat]]).astype("int64")
@@ -145,19 +126,15 @@ def add_encodings(X_tr, X_va, y_tr, cat, num):
 
 def main():
     df = load_df()
-    # -------- test split: hold out latest season --------
+    # test split: hold out latest season 
     latest_season = int(df["season"].max())
     test = df[df["season"] == latest_season].reset_index(drop=True)
     train = df[df["season"] < latest_season].reset_index(drop=True)
     print(f"Train seasons ≤ {latest_season-1}: {len(train)} rows | Test season {latest_season}: {len(test)} rows")
 
-    # -------- build data (y: 1=miss, 0=make) --------
     X_tr_all, y_tr_all, num, cat = build_xy(train)
-    X_te_raw, y_te_miss, _, _ = build_xy(test)  # y_te_miss: 1=miss, 0=make
+    X_te_raw, y_te_miss, _, _ = build_xy(test)  
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
-
-    # -------- Inner-CV tuning: Bagging (optimize Brier on P(miss)) --------
-    # Expanded hyperparameter space, random search over more candidates.
     bag_params = {
         "n_estimators":    [150, 250, 400, 600],
         "max_depth":       [3, 5, 7, 9, None],
@@ -167,11 +144,10 @@ def main():
     }
 
     def cv_score_bag(params, idx=None, total=None):
-        # return mean Brier on P(miss) (uncalibrated)
         briers = []
         for fold_idx, (tr_idx, va_idx) in enumerate(skf.split(X_tr_all, y_tr_all)):
             Xtr, Xva = X_tr_all.iloc[tr_idx], X_tr_all.iloc[va_idx]
-            ytr, yva = y_tr_all[tr_idx], y_tr_all[va_idx]  # 1=miss, 0=make
+            ytr, yva = y_tr_all[tr_idx], y_tr_all[va_idx] 
             Xtr_enc, Xva_enc = add_encodings(Xtr, Xva, ytr, cat, num)
             sw = compute_sw(ytr)
 
@@ -219,9 +195,8 @@ def main():
         )
     print("\nBest Bagging params (by Brier on P(miss)):", best_params)
 
-    # -------- OOF pass to fit global isotonic calibrators (train only) --------
     oof_p_miss = np.zeros(len(train))
-    oof_y_miss = y_tr_all.copy()  # 1=miss, 0=make
+    oof_y_miss = y_tr_all.copy()  
     oof_dist   = train["kick_distance"].values
     for tr_idx, va_idx in skf.split(X_tr_all, oof_y_miss):
         Xtr, Xva = X_tr_all.iloc[tr_idx], X_tr_all.iloc[va_idx]
@@ -250,12 +225,9 @@ def main():
     # calibrate P(miss) by distance
     irs_global = fit_isotonic_by_range(oof_dist, oof_p_miss, oof_y_miss, bins=BINS)
     oof_p_miss_cal = apply_isotonic_by_range(oof_dist, oof_p_miss, irs_global, bins=BINS)
-    # OOF Brier on P(miss)
     oof_brier_miss = brier_score_loss(oof_y_miss, oof_p_miss_cal)
     print(f"OOF Brier after per-distance isotonic calibration (P(miss)): {oof_brier_miss:.5f}")
 
-    # -------- Train on ALL train with best params; evaluate on TEST --------
-    # Encodings: fit on train, transform test (no leakage)
     Xtr_enc, _ = add_encodings(X_tr_all, X_tr_all, y_tr_all, cat, num)
 
     test_enc = test.copy()
@@ -291,10 +263,9 @@ def main():
         test["kick_distance"].values, pte_miss_raw, irs_global, bins=BINS
     )
     # derive P(make)
-    y_te_make = 1 - y_te_miss          # 1=make, 0=miss
+    y_te_make = 1 - y_te_miss          
     pte_make  = 1.0 - pte_miss
 
-    # --- Probability distribution diagnostics on TEST ---
     p_make_miss = pte_make[y_te_make == 0]  # predicted P(make) for true misses
     p_make_make = pte_make[y_te_make == 1]  # predicted P(make) for true makes
 
@@ -319,17 +290,13 @@ def main():
         frac = np.mean(p_make_miss < t)
         print(f"Fraction of MISSES with P(make) < {t:.2f}: {frac:.3f}")
 
-    # ---- reporting (ranking + calibration + simple decision) ----
     # Brier on P(make) (equivalent to Brier on P(miss))
     brier = brier_score_loss(y_te_make, pte_make)
     # AUC on P(make) vs y_make
     auc = roc_auc_score(y_te_make, pte_make)
     # PR-AUC for misses: use y_miss and P(miss)
     pr_miss = average_precision_score(y_te_miss, pte_miss)
-    # ECE on P(make)
     ece10 = ece_score(pte_make, y_te_make, n_bins=N_ECE_BINS)
-
-    # fixed threshold at 0.5 on P(make) for confusion matrix
     thr = 0.5
     yhat_make = (pte_make >= thr).astype(int)
     tn, fp, fn, tp = confusion_matrix(y_te_make, yhat_make).ravel()
