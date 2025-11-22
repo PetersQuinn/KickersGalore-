@@ -76,7 +76,6 @@ def main():
         y_miss = normal_pdf(x, miss_mu, miss_sd)
         y_make = normal_pdf(x, make_mu, make_sd)
 
-        # Optionally rescale so the tallest curve is 1.0 (just for cleaner visuals)
         max_y = max(y_miss.max(), y_make.max())
         if max_y > 0:
             y_miss = y_miss / max_y
