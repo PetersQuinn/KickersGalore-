@@ -122,7 +122,7 @@ ENSEMBLE_WEIGHTS = {
     "lr": 0.15,
 }
 
-DATA_PATH = Path(__file__).resolve().parent / "field_goals_model_ready.csv"
+DATA_PATH = Path(__file__).resolve().parent / "data_for_streamlit.csv"
 
 
 def build_preprocessor():
