@@ -1,9 +1,7 @@
 """
-kicker_demo_model.py
-
 Train the weighted ensemble model and predict P(make) for 3 demo kicks.
 
-Model components (with fixed hyperparameters from your tuning):
+Model components:
 - Bagging (DecisionTree base)
 - LightGBM
 - GAM (LogisticGAM)
@@ -11,12 +9,6 @@ Model components (with fixed hyperparameters from your tuning):
 
 Ensemble weights:
 0.10 * Bagging + 0.35 * LGBM + 0.40 * GAM + 0.15 * LR
-
-Assumes CSV: field_goals_model_ready.csv with columns:
-season,score_differential,kicker_player_name,kick_distance,temp,wind,
-season_type_binary,field_goal_result_binary,roof_binary,surface_binary,
-altitude,vegas_wp_effective,is_rain,is_snow,career_attempts,career_fg_pct,
-is_4th_qtr,buzzer_beater_binary
 """
 
 import numpy as np
@@ -33,7 +25,6 @@ from pygam import LogisticGAM
 
 CSV_PATH = "field_goals_model_ready.csv"
 
-# Features we’ll use (no season, no name, no target)
 FEATURE_COLS = [
     "score_differential",
     "kick_distance",
@@ -55,20 +46,15 @@ FEATURE_COLS = [
 TARGET_COL = "field_goal_result_binary"
 
 
-# -------------------------------
-# Helper: per-distance isotonic
-# -------------------------------
-
 DIST_BUCKETS = [
     (0, 29, "0-29"),
     (30, 39, "30-39"),
     (40, 49, "40-49"),
-    (50, 120, "50+"),  # upper bound well above max 71
+    (50, 120, "50+"),  
 ]
 
 
 def get_distance_bucket_label(d):
-    """Map a distance to one of the distance bucket labels."""
     for lo, hi, label in DIST_BUCKETS:
         if lo <= d <= hi:
             return label
@@ -76,10 +62,6 @@ def get_distance_bucket_label(d):
 
 
 def fit_per_distance_isotonic(distances, raw_probs, y, min_samples=30):
-    """
-    Fit isotonic calibration separately in each distance bucket,
-    plus a global fallback calibrator if a bucket has too few samples.
-    """
     distances = np.asarray(distances)
     raw_probs = np.asarray(raw_probs)
     y = np.asarray(y)
@@ -100,12 +82,6 @@ def fit_per_distance_isotonic(distances, raw_probs, y, min_samples=30):
 
 
 def apply_per_distance_isotonic(calib, distances, raw_probs):
-    """
-    Apply per-distance isotonic calibration to new predictions.
-    calib: output of fit_per_distance_isotonic
-    distances: 1D array of kick distances
-    raw_probs: 1D array of model P(make) predictions
-    """
     distances = np.asarray(distances)
     raw_probs = np.asarray(raw_probs)
     calibrated = np.zeros_like(raw_probs, dtype=float)
@@ -118,35 +94,10 @@ def apply_per_distance_isotonic(calib, distances, raw_probs):
 
     return calibrated
 
-
-# -------------------------------
-# Helper: vegas win prob scaling
-# -------------------------------
-
-def normalize_wp(x):
-    """
-    Ensure vegas_wp_effective is on [0,1]. If value looks like a percent (>1),
-    convert by dividing by 100.
-    """
-    if x is None:
-        return None
-    return x / 100.0 if x > 1.0 else x
-
-
-# -------------------------------
-# Build and train base models
-# -------------------------------
-
 def train_models(df):
-    """
-    Train Bagging, LGBM, GAM, and LR using fixed hyperparameters.
-    Use seasons < 2024 as training if present; otherwise use all rows.
-    """
-    # Train/Test split by season (train on pre-2024)
     if (df["season"] == 2024).any():
         train_mask = df["season"] < 2024
     else:
-        # if no 2024, just use all for training
         train_mask = np.ones(len(df), dtype=bool)
 
     train_df = df.loc[train_mask].copy()
@@ -155,7 +106,6 @@ def train_models(df):
     y_train = train_df[TARGET_COL].values
     dist_train = train_df["kick_distance"].values
 
-    # ---- Bagging ----
     bag_base = DecisionTreeClassifier(
         max_depth=None,
         min_samples_leaf=1,
@@ -175,7 +125,6 @@ def train_models(df):
     bagging_probs_train = bagging.predict_proba(X_train)[:, 1]
     bagging_calib = fit_per_distance_isotonic(dist_train, bagging_probs_train, y_train)
 
-    # ---- LightGBM ----
     lgbm = LGBMClassifier(
         num_leaves=127,
         learning_rate=0.015,
@@ -195,13 +144,11 @@ def train_models(df):
     lgbm_probs_train = lgbm.predict_proba(X_train)[:, 1]
     lgbm_calib = fit_per_distance_isotonic(dist_train, lgbm_probs_train, y_train)
 
-    # ---- GAM ----
     gam = LogisticGAM(lam=1000.0, n_splines=8)
     gam.fit(X_train, y_train)
     gam_probs_train = gam.predict_proba(X_train)
     gam_calib = fit_per_distance_isotonic(dist_train, gam_probs_train, y_train)
 
-    # ---- Logistic Regression ----
     lr = LogisticRegression(
         C=0.00126743,
         penalty="l2",
@@ -222,18 +169,7 @@ def train_models(df):
     return models
 
 
-# -------------------------------
-# Predict for new kicks
-# -------------------------------
-
 def predict_for_kicks(models, kicks_df):
-    """
-    Given trained models and a DataFrame of new kicks (with FEATURE_COLS),
-    compute:
-    - calibrated P(make) for each base model
-    - weighted ensemble P(make) using:
-      0.10*bagging + 0.35*lgbm + 0.40*gam + 0.15*lr
-    """
     X_new = kicks_df[FEATURE_COLS].values
     distances = kicks_df["kick_distance"].values
 
@@ -249,7 +185,7 @@ def predict_for_kicks(models, kicks_df):
     gam_cal = apply_per_distance_isotonic(models["gam"]["calib"], distances, gam_raw)
     lr_cal = apply_per_distance_isotonic(models["lr"]["calib"], distances, lr_raw)
 
-    # Weighted ensemble (best weighted ensemble from your search)
+    # Weighted ensemble 
     ensemble = (
         0.10 * bagging_cal
         + 0.35 * lgbm_cal
@@ -267,18 +203,11 @@ def predict_for_kicks(models, kicks_df):
     return results
 
 
-# -------------------------------
-# Main: train + demo on 3 kicks
-# -------------------------------
-
 if __name__ == "__main__":
-    # 1. Load data
     df = pd.read_csv(CSV_PATH)
 
-    # 2. Train models
     models = train_models(df)
 
-    # 3. Build demo kicks DataFrame
     demo_kicks = [
         {
             "kick_id": "Kick 1 – 68 yards, indoor, down 6",
@@ -290,8 +219,7 @@ if __name__ == "__main__":
             "roof_binary": 1,
             "surface_binary": 0,
             "altitude": 2000,
-            # NOTE: convert 37.2% to 0.372
-            "vegas_wp_effective": normalize_wp(37.2),
+            "vegas_wp_effective": 0.372,
             "is_rain": 0,
             "is_snow": 0,
             "career_attempts": 43,
@@ -309,8 +237,7 @@ if __name__ == "__main__":
             "roof_binary": 0,
             "surface_binary": 0,
             "altitude": 580,
-            # 65.4% -> 0.654
-            "vegas_wp_effective": normalize_wp(65.4),
+            "vegas_wp_effective": 0.654,
             "is_rain": 0,
             "is_snow": 0,
             "career_attempts": 121,
@@ -328,8 +255,7 @@ if __name__ == "__main__":
             "roof_binary": 0,
             "surface_binary": 0,
             "altitude": 385,
-            # already in [0,1]
-            "vegas_wp_effective": normalize_wp(0.806),
+            "vegas_wp_effective": 0.806,
             "is_rain": 0,
             "is_snow": 0,
             "career_attempts": 40,
@@ -346,10 +272,8 @@ if __name__ == "__main__":
         if col not in demo_df.columns:
             raise ValueError(f"Missing feature column in demo kicks: {col}")
 
-    # 4. Predict probabilities
     results = predict_for_kicks(models, demo_df)
 
-    # 5. Print nicely
     pd.set_option("display.precision", 4)
     print("\n=== Demo Kick Probabilities (P(make)) ===\n")
     cols_to_show = [
