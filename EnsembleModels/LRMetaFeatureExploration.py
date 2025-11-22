@@ -17,10 +17,9 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.isotonic import IsotonicRegression
 
 from pygam import LogisticGAM
-from gbart.modified_bartpy.sklearnmodel import SklearnModel  # BART
+from gbart.modified_bartpy.sklearnmodel import SklearnModel  
 import lightgbm as lgb
 
-# -------------------- Config --------------------
 
 RANDOM_STATE = 42
 TARGET = "field_goal_result_binary"  # 1=make, 0=miss
@@ -28,25 +27,21 @@ CATEGORICAL = ["kicker_player_name"]
 PARQUET = "field_goals_model_ready.parquet"
 CSV = "field_goals_model_ready.csv"
 
-# distance bins for optional calibration (kept simple; one global isotonic)
+# distance bins for optional calibration 
 BINS = (0, 40, 50, 80)
 
-# causal features from BART table
 CAUSAL_FEATURES = [
     "kick_distance",
     "is_snow",
     "is_rain",
     "roof_binary",
-    "buzzer_beater_binary",  # we'll handle fallback name below
+    "buzzer_beater_binary",  
     "career_fg_pct",
 ]
 
-# folder to save stacking data
 STACK_DIR = "stack_meta"
 os.makedirs(STACK_DIR, exist_ok=True)
 
-
-# -------------------- Helpers --------------------
 
 def load_df():
     if Path(PARQUET).exists():
@@ -60,7 +55,6 @@ def load_df():
 
 
 def ece_score(probs, y, n_bins=10):
-    """Expected Calibration Error for P(make) vs y (1=make)."""
     probs = np.asarray(probs)
     y = np.asarray(y)
     bins = np.linspace(0, 1, n_bins + 1)
@@ -75,10 +69,6 @@ def ece_score(probs, y, n_bins=10):
 
 
 def fit_isotonic_global(p_train, y_train):
-    """
-    Fit a single isotonic regressor mapping raw P(make) -> calibrated P(make)
-    using all train data. (Simpler than per-distance bins.)
-    """
     ir = IsotonicRegression(out_of_bounds="clip")
     ir.fit(p_train, y_train)
     return ir
@@ -90,14 +80,12 @@ def apply_isotonic_global(p, ir):
 
 
 def prepare_features(df):
-    """Split into X (drop target & kicker name), y_make."""
     y_make = df[TARGET].astype(int).values  # 1=make, 0=miss
     X = df.drop(columns=[TARGET] + CATEGORICAL, errors="ignore").copy()
     return X, y_make
 
 
 def ensure_causal_columns(df):
-    """Make sure the 6 causal features exist, with a buzzer_beater fallback."""
     cols = list(df.columns)
     if "buzzer_beater_binary" not in cols and "buzzer_beatery_binary" in cols:
         df["buzzer_beater_binary"] = df["buzzer_beatery_binary"]
@@ -105,8 +93,6 @@ def ensure_causal_columns(df):
     if missing:
         raise ValueError(f"Missing causal feature columns in df: {missing}")
 
-
-# -------------------- Base model trainers --------------------
 
 def train_predict_bagging(X_tr, y_tr, X_te):
     print("[bagging] Training...")
@@ -133,10 +119,6 @@ def train_predict_bagging(X_tr, y_tr, X_te):
 
 
 def train_predict_bayes_lr(X_tr, y_tr, X_te):
-    """
-    'Bayesian-style' LR here is approximated as strongly-regularized LR
-    with C=0.001 and L2 penalty (matches your tuned params).
-    """
     print("[bayes_lr] Training...")
     scaler = StandardScaler()
     Xtr_s = scaler.fit_transform(X_tr)
@@ -210,13 +192,12 @@ def train_predict_bart(X_tr, y_tr, X_te):
         n_samples=150,
         n_burn=400,
         thin=0.5,
-        n_jobs=1,  # safer on Windows
+        n_jobs=1, 
     )
     model.fit(X_tr.values, y_tr)
     print("[bart] Predicting train/test...")
     p_tr = model.predict(X_tr.values)
     p_te = model.predict(X_te.values)
-    # clip to (0,1)
     p_tr = np.clip(p_tr, 1e-6, 1 - 1e-6)
     p_te = np.clip(p_te, 1e-6, 1 - 1e-6)
     return p_tr, p_te
@@ -242,8 +223,6 @@ def train_predict_lr(X_tr, y_tr, X_te):
     p_te = clf.predict_proba(Xte_s)[:, 1]
     return p_tr, p_te
 
-
-# -------------------- Main pipeline --------------------
 
 def main():
     df = load_df()
@@ -295,7 +274,6 @@ def main():
     base_train["lr"] = p_tr
     base_test["lr"] = p_te
 
-    # Optional: simple global isotonic calibration per model (fit on train, apply to both)
     print("[calibration] Fitting global isotonic calibrators per model...")
     for name in base_train.keys():
         print(f"  - {name}")
@@ -303,7 +281,6 @@ def main():
         base_train[name] = apply_isotonic_global(base_train[name], ir)
         base_test[name] = apply_isotonic_global(base_test[name], ir)
 
-    # ---------------- Build stacking datasets ----------------
 
     print("[stack] Building stack_train and stack_test DataFrames...")
 
@@ -329,11 +306,10 @@ def main():
     print(f"[stack] Saved stack_train to {train_path}")
     print(f"[stack] Saved stack_test to {test_path}")
 
-    # ---------------- Meta-LR ensembles with feature subsets ----------------
 
     print("\n---------------- Meta-Logistic Regression Ensembles ----------------")
 
-    # base-probability columns (always included in meta model)
+    # base-probability columns 
     prob_cols = [f"p_{m}" for m in model_names]
 
     results = []
@@ -436,7 +412,6 @@ def main():
         f"tn={best['tn']} fp={best['fp']} fn={best['fn']} tp={best['tp']}"
     )
 
-    # Optional: save full results table
     results_path = os.path.join(STACK_DIR, "meta_lr_results.csv")
     results_df.to_csv(results_path, index=False)
     print(f"\n[meta-LR] Saved full results to {results_path}")
