@@ -15,6 +15,7 @@ from sklearn.ensemble import BaggingClassifier
 from sklearn.linear_model import LogisticRegression
 from lightgbm import LGBMClassifier
 
+
 class GamWrapper(BaseEstimator, ClassifierMixin):
     def __init__(self, lam=1000.0, n_splines=8):
         self.lam = lam
@@ -88,6 +89,7 @@ class WeightedEnsemble(BaseEstimator, ClassifierMixin):
 
     def predict(self, X):
         return (self.predict_proba(X)[:, 1] >= 0.5).astype(int)
+
 
 FEATURE_COLS = [
     "season",
@@ -239,7 +241,7 @@ def safe_load_model():
         return load_model(), None
     except Exception as e:
         return None, str(e)
-    
+
 def build_input_form():
     st.header("Kick Scenario")
 
@@ -327,9 +329,16 @@ def build_input_form():
             )
 
     with st.expander("Kicker profile", expanded=True):
-        c1, c2 = st.columns(3)
+        c1, c2, c3 = st.columns(3)
 
         with c1:
+            kicker_name = st.text_input(
+                "Kicker name",
+                value="Kicker Name",
+                help="Used as a categorical feature.",
+            )
+
+        with c2:
             career_attempts = st.number_input(
                 "Career FG attempts (before this kick)",
                 min_value=0,
@@ -338,7 +347,7 @@ def build_input_form():
                 step=1,
             )
 
-        with c2:
+        with c3:
             career_fg_pct = st.slider(
                 "Career FG% (0 - 1.0)",
                 min_value=0.0,
@@ -446,7 +455,7 @@ def main():
 
                 Remember: this is a **probabilistic** model, not a guarantee. 
                 Edge cases (extreme weather, injuries, botched snaps) may behave very differently.
-                This model does NOT account for blocked kicks.
+                This model does NOT account for blocked kicks or other unusual events.
                 """
             )
         except Exception as e:
