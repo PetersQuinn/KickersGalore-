@@ -1,4 +1,3 @@
-# kicker_gam_baseline.py
 # GAM baseline for kicker probabilities (LogisticGAM via pygam)
 # - Temporal holdout (latest season) as TEST
 # - 5-fold CV on earlier seasons for hyperparam tuning using Brier score on P(miss)
@@ -28,7 +27,6 @@ CATEGORICAL = ["kicker_player_name"]
 PARQUET = "field_goals_model_ready.parquet"
 CSV = "field_goals_model_ready.csv"
 
-# ---- reporting / calibration config ----
 N_ECE_BINS = 10
 BINS       = (0, 40, 50, 80)  # distance bins for per-range isotonic
 
@@ -64,8 +62,6 @@ def fold_target_encode(train_col, train_y, valid_col, smoothing=20.0):
     enc = (g["count"] * g["mean"] + smoothing * prior) / (g["count"] + smoothing)
     return valid_col.map(enc).fillna(prior).values
 
-
-# ------- Isotonic calibration helpers (no test leakage) -------
 
 def fit_isotonic_by_range(x_dist, p, y, bins=BINS):
     """
@@ -144,9 +140,6 @@ def add_te_and_scale(X_tr, X_va, y_tr, num_cols, cat):
 
 
 def safe_probs(p, fallback_len):
-    """
-    Ensure probabilities are finite and in (0,1). If not, fall back to 0.5.
-    """
     p = np.asarray(p).ravel()
     if p.shape[0] != fallback_len or not np.all(np.isfinite(p)):
         # fallback: neutral 0.5 for all examples
@@ -156,18 +149,15 @@ def safe_probs(p, fallback_len):
 
 def main():
     df = load_df()
-    # -------- test split: hold out latest season --------
     latest_season = int(df["season"].max())
     test = df[df["season"] == latest_season].reset_index(drop=True)
     train = df[df["season"] < latest_season].reset_index(drop=True)
     print(f"Train seasons ≤ {latest_season-1}: {len(train)} rows | Test season {latest_season}: {len(test)} rows")
 
-    # -------- build data (y: 1=miss, 0=make) --------
     X_tr_all, y_tr_all, num, cat = build_xy(train)
     X_te_raw, y_te_miss, _, _ = build_xy(test)  # y_te_miss: 1=miss, 0=make
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
 
-    # -------- Inner-CV tuning: GAM (optimize Brier on P(miss)) --------
     # Random search over lam and n_splines
     gam_param_space = {
         "lam":       [0.3, 1.0, 3.0, 10.0, 30.0, 100.0, 300.0, 1000.0],
@@ -175,10 +165,6 @@ def main():
     }
 
     def cv_score_gam(params, idx=None, total=None):
-        """
-        Return mean Brier on P(miss) (uncalibrated).
-        Prints per-fold Brier so you can see progress.
-        """
         lam = params["lam"]
         n_splines = params["n_splines"]
         briers = []
@@ -242,7 +228,6 @@ def main():
     best_lam = best_params["lam"]
     best_n_splines = best_params["n_splines"]
 
-    # -------- OOF pass to fit global isotonic calibrators (train only) --------
     oof_p_miss = np.zeros(len(train))
     oof_y_miss = y_tr_all.copy()  # 1=miss, 0=make
     oof_dist   = train["kick_distance"].values
@@ -281,7 +266,6 @@ def main():
     oof_brier_miss = brier_score_loss(oof_y_miss, oof_p_miss_cal)
     print(f"OOF Brier after per-distance isotonic calibration (P(miss)): {oof_brier_miss:.5f}")
 
-    # -------- Train on ALL train with best params; evaluate on TEST --------
     # Fit scaler/TE on all train, apply to test
     Xtr_mat_all, _, use_cols, scaler = add_te_and_scale(
         X_tr_all, X_tr_all, y_tr_all, num, cat
@@ -317,7 +301,6 @@ def main():
     y_te_make = 1 - y_te_miss          # 1=make, 0=miss
     pte_make  = 1.0 - pte_miss
 
-    # --- Probability distribution diagnostics on TEST ---
     p_make_miss = pte_make[y_te_make == 0]  # predicted P(make) for true misses
     p_make_make = pte_make[y_te_make == 1]  # predicted P(make) for true makes
 
@@ -342,7 +325,6 @@ def main():
         frac = np.mean(p_make_miss < t)
         print(f"Fraction of MISSES with P(make) < {t:.2f}: {frac:.3f}")
 
-    # ---- reporting (ranking + calibration + simple decision) ----
     # Brier on P(make) (equivalent to Brier on P(miss))
     brier = brier_score_loss(y_te_make, pte_make)
     # AUC on P(make) vs y_make
