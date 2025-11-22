@@ -261,7 +261,7 @@ def build_input_form():
             )
 
         with c2:
-            quarter_4 = st.checkbox("4th quarter?", value=True)
+            quarter_4 = st.checkbox("4th quarter?", value=False)
             buzzer_beater = st.checkbox(
                 "Buzzer-beater (last-second) attempt?",
                 value=False,
