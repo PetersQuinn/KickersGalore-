@@ -15,3 +15,4 @@ stack_meta/stack_test.csv
 field_goals_model_ready.parquet
 nfl_field_goals_clean_2013_2024.csv
 nfl_field_goals_clean_2013_2024.parquet
+StreamlitSection/weighted_ensemble.pkl
