@@ -12,5 +12,6 @@ stack_meta/meta_lr_results.csv
 model_probs/probs_lr.csv
 stack_meta/stack_train.csv
 stack_meta/stack_test.csv
-causal_forest_ate_summary.csv
-MakeAndMissProfile.py
+field_goals_model_ready.parquet
+nfl_field_goals_clean_2013_2024.csv
+nfl_field_goals_clean_2013_2024.parquet
