@@ -1,6 +1,4 @@
-# kicker_ensemble_eval.py
-#
-# Load per-model probability CSVs from model_probs/ and:
+# Load per-model probability CSVs from model_probs/ (not provided in gitHub, refer to TestProbGen) and:
 #   - Evaluate each individual model.
 #   - Try all equal-weight average ensembles across models (size >= 2).
 #   - Print metrics in a similar format to the single-model scripts.
@@ -21,14 +19,9 @@ from sklearn.metrics import (
     brier_score_loss,
 )
 
-# -------------------------------------------------------------------
-# Config
-# -------------------------------------------------------------------
-
 N_ECE_BINS = 10
 PROBS_DIR = Path("model_probs")
 
-# Map short model names to CSV filenames produced by the previous script.
 MODEL_FILES = {
     "bagging": "probs_bagging.csv",
     "bayes_lr": "probs_bayes_lr.csv",
@@ -39,15 +32,8 @@ MODEL_FILES = {
 }
 
 
-# -------------------------------------------------------------------
-# Helpers
-# -------------------------------------------------------------------
 
 def ece_score(probs, y, n_bins=N_ECE_BINS):
-    """
-    Expected Calibration Error.
-    probs: P(make), y: 1=make, 0=miss
-    """
     probs = np.asarray(probs)
     y = np.asarray(y)
     bins = np.linspace(0, 1, n_bins + 1)
@@ -77,9 +63,6 @@ def summarize_probs(name, arr):
 
 
 def compute_metrics(p_make, y_true, name=""):
-    """
-    Compute all the scalar metrics we care about for a given P(make).
-    """
     y_true = np.asarray(y_true)
     p_make = np.asarray(p_make)
 
@@ -119,7 +102,7 @@ def compute_metrics(p_make, y_true, name=""):
 
 def print_metrics_block(m):
     """
-    Pretty-print metrics like in the single-model scripts.
+    Pretty-print metrics like in the single-model scripts, pretty is better lol
     """
     print(f"\n=== TEST — {m['name']} ===")
     print(f"Brier={m['brier']:.5f} (primary, on P(make))")
@@ -134,12 +117,7 @@ def print_metrics_block(m):
     )
 
 
-# -------------------------------------------------------------------
-# Main
-# -------------------------------------------------------------------
-
 def main():
-    # ---- Load per-model CSVs and assemble into a single frame ----
     frames = {}
     y_ref = None
 
@@ -164,12 +142,10 @@ def main():
     print("Loaded models:", ", ".join(model_names))
     print(f"Test size: {len(y_te)}")
 
-    # Build a single DataFrame for convenience
     preds_df = pd.DataFrame({"y_te": y_te})
     for mname in model_names:
         preds_df[mname] = frames[mname]
 
-    # ---- Evaluate each individual model (baseline) ----
     print("\n---------------- Individual models ----------------")
     indiv_metrics = []
     for mname in model_names:
@@ -177,7 +153,6 @@ def main():
         indiv_metrics.append(m)
         print_metrics_block(m)
 
-    # ---- Try all equal-weight ensembles for subsets of size >= 2 ----
     print("\n---------------- Ensembles (equal-weight average) ----------------")
 
     ensemble_metrics = []
@@ -190,10 +165,8 @@ def main():
             m = compute_metrics(p_ens, y_te, name=combo_name)
             ensemble_metrics.append(m)
 
-    # Sort ensembles by Brier (lower is better)
     ensemble_metrics_sorted = sorted(ensemble_metrics, key=lambda x: x["brier"])
 
-    # ---- Print top ensembles summary ----
     TOP_K = 10
     print(f"\nTop {TOP_K} ensembles by Brier score:")
     print(
@@ -207,21 +180,18 @@ def main():
             f"| {m['brier']:.5f} | {m['auc']:.4f} | {m['pr_miss']:.4f} | {m['ece10']:.4f}"
         )
 
-    # ---- Detailed diagnostics for the best ensemble ----
     best_ens = ensemble_metrics_sorted[0]
     combo_str = best_ens["name"]
     print("\n==============================================================")
     print("Best ensemble by Brier:", combo_str)
     print_metrics_block(best_ens)
 
-    # Reconstruct its prediction vector
     # name format is ENS[m1+m2+...], so extract the model names from inside brackets.
     inside = combo_str[len("ENS[") : -1]
     best_models = inside.split("+")
     p_cols = [preds_df[m].values for m in best_models]
     p_best = np.mean(np.stack(p_cols, axis=0), axis=0)
 
-    # Probability diagnostics like before
     y_te_arr = np.asarray(y_te)
     p_make_miss = p_best[y_te_arr == 0]
     p_make_make = p_best[y_te_arr == 1]
