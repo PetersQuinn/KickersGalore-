@@ -1,4 +1,3 @@
-# kicker_logreg_baseline.py
 # Standalone logistic regression baseline matching the evaluation of boosted model
 # - Temporal holdout (latest season) as TEST
 # - 5-fold CV on earlier seasons for hyperparam (C) tuning using Brier score on P(make)
@@ -23,11 +22,9 @@ CATEGORICAL = ["kicker_player_name"]
 PARQUET = "field_goals_model_ready.parquet"
 CSV = "field_goals_model_ready.csv"
 
-# ---- calibration + ECE config ----
 N_ECE_BINS = 10
 BINS = (0, 40, 50, 80)  # distance bins for per-range isotonic
 
-# ---------------- helpers ----------------
 
 def load_df():
     if Path(PARQUET).exists():
@@ -118,8 +115,6 @@ def add_te_and_scale(X_tr, X_va, y_tr, num_cols, cat):
     return Xtr_mat, Xva_mat, use_cols, scaler
 
 
-# ---------------- main ----------------
-
 def main():
     df = load_df()
     latest_season = int(df["season"].max())
@@ -134,19 +129,14 @@ def main():
     X_te_raw, y_te, _, _ = build_xy(test)               # y_te: 1=make, 0=miss
     skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=RANDOM_STATE)
 
-    # ---- random search over C on log scale ----
     rng = np.random.RandomState(RANDOM_STATE)
     N_CANDIDATES = 40
-    C_candidates = 10 ** rng.uniform(-3, 2, size=N_CANDIDATES)  # 1e-3 to 1e2
+    C_candidates = 10 ** rng.uniform(-3, 2, size=N_CANDIDATES)  
 
     best_C = None
     best_brier = np.inf
 
     def cv_score_lr(C, idx=None, total=None):
-        """
-        Return mean Brier on P(make) (uncalibrated).
-        Prints per-fold Brier so you can monitor progress.
-        """
         briers = []
         for fold_id, (tr_idx, va_idx) in enumerate(
             skf.split(X_tr_all, y_tr_all), start=1
@@ -213,7 +203,6 @@ def main():
     oof_brier = brier_score_loss(oof_y, oof_p_cal)
     print(f"OOF Brier after per-distance isotonic calibration (P(make)): {oof_brier:.5f}")
 
-    # ---- Train on ALL train; transform TEST and evaluate ----
     # Fit scaler/TE on all train, apply to test
     Xtr_mat_all, _, use_cols, scaler = add_te_and_scale(
         X_tr_all, X_tr_all, y_tr_all, num, cat
@@ -239,7 +228,6 @@ def main():
         test["kick_distance"].values, pte_raw, irs_global, bins=BINS
     )  # calibrated P(make)
 
-    # --- Probability distribution diagnostics on TEST ---
     p_make_miss = pte[y_te == 0]  # predicted P(make) for true misses
     p_make_make = pte[y_te == 1]  # predicted P(make) for true makes
 
@@ -268,7 +256,7 @@ def main():
     thr = 0.5
     yhat = (pte >= thr).astype(int)
 
-    # ---- reporting ----
+
     # Brier on P(make)
     brier = brier_score_loss(y_te, pte)
     # AUC on P(make) vs y (1=make)
