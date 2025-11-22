@@ -1,6 +1,5 @@
-# causal_forest_all_features_FIXED.py
 """
-Causal Forest (econml) causal analysis for the kicker dataset — with refined RELATED_DROPS
+Causal Forest (econml) causal analysis for the kicker dataset with refined RELATED_DROPS
 and resilient CSV/Parquet loading.
 
 - Outcome: miss = 1 - field_goal_result_binary
@@ -8,11 +7,6 @@ and resilient CSV/Parquet loading.
 - Binary effects: E[Y(1) - Y(0)] via effect(X, T0=0, T1=1)
 - Continuous effects: finite-difference ATE over DELTA via effect(X, T0=t, T1=t+delta), also report per-unit
 - Writes CSV: causal_forest_ate_summary.csv
-
-Install:
-  pip install econml scikit-learn
-
-Note: CF uses built-in cross-fitting; no scaling required for trees. Keep binaries as 0/1.
 """
 
 import numpy as np
@@ -26,10 +20,9 @@ from econml.dml import CausalForestDML
 RANDOM_STATE = 42
 PARQUET = "field_goals_model_ready.parquet"
 CSV     = "field_goals_model_ready.csv"
-TARGET  = "field_goal_result_binary"  # 1=make, 0=miss → miss=1
+TARGET  = "field_goal_result_binary"  
 ID_COLS = ["kicker_player_name", "season"]
 
-# -------------------- treatment configuration --------------------
 BINARY_TREATMENTS = [
     "roof_binary",
     "is_rain",
@@ -75,8 +68,6 @@ RELATED_DROPS = {
     "buzzer_beater_binary": ["is_4th_qtr"],
 }
 
-# -------------------- robust loader --------------------
-
 def load_df():
     if Path(PARQUET).exists():
         try:
@@ -84,15 +75,13 @@ def load_df():
         except Exception as e:
             print(f"[warn] Failed to read parquet with pyarrow: {e}")
             try:
-                import fastparquet  # noqa: F401
+                import fastparquet  
                 print("[info] Retrying with fastparquet engine...")
                 return pd.read_parquet(PARQUET, engine="fastparquet")
             except Exception as e2:
                 print(f"[warn] fastparquet also failed: {e2}")
     print("[info] Falling back to CSV load...")
     return pd.read_csv(CSV)
-
-# -------------------- helpers --------------------
 
 def build_y(df: pd.DataFrame) -> np.ndarray:
     return (1 - df[TARGET].astype(int).values).astype(int)

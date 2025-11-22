@@ -1,4 +1,3 @@
-# kicker_bagging_baseline.py
 # Bagging baseline for kicker probabilities
 # - Temporal holdout (latest season) as TEST
 # - 5-fold CV on earlier seasons for hyperparam tuning using Brier score on P(miss)
