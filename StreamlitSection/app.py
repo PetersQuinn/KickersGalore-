@@ -143,7 +143,7 @@ The goal isn’t just to say *“make”* or *“miss”*, but to provide a **ca
 
 The model was trained on **12,449 NFL field goal attempts** from recent seasons, filtered to standard kicks
 (no blocks, no obviously corrupted plays).  
-For each kick, we engineered features such as:
+For each kick, I engineered features such as:
 
 - **Distance & game state:** kick distance, score differential, 4th quarter, “buzzer-beater” flag  
 - **Environment:** temperature, wind speed, rain/snow flags, roof (open/closed), surface (grass/turf), stadium altitude  
@@ -175,7 +175,7 @@ Evaluation was done on a **held-out 2024 season** to mimic real predictive use.
 
 ### Final ensemble
 
-Instead of relying on a single model, I use a **weighted ensemble**:
+Instead of relying on a single model, I tuned a **weighted ensemble**:
 
 > 0.10 × Bagging + 0.35 × LightGBM + 0.40 × GAM + 0.15 × Logistic Regression
 
@@ -198,7 +198,7 @@ and the inputs you provide. It:
 - Is less reliable for extreme situations (very long kicks, wild weather, tiny sample scenarios)  
 
 The idea is to **reduce guesswork** in kick decisions and provide a more informed view of risk,
-not to replace coaching judgment—especially on the season-defining, “Double Doink” type moments.
+not to replace coaching judgment, especially on the season-defining, “Double Doink” type moments.
             """
         )
 
@@ -475,7 +475,7 @@ def main():
     st.title("Kickers Galore – Field Goal Make Probability")
 
     model_overview_panel() 
-    
+
     st.markdown(
         """
         This model was fine tuned on over 10,000 NFL kicks and combines multiple machine learning algorithms
