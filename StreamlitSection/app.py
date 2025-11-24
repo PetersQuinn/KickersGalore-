@@ -243,12 +243,11 @@ def safe_load_model():
 def build_input_form():
     st.header("Kick Scenario")
 
+    # ---------------- Game context ----------------
     with st.expander("Game context", expanded=True):
         c1, c2, c3 = st.columns(3)
 
         with c1:
-            season = st.number_input("Season", min_value=1990, max_value=2035,
-                                     value=2024, step=1)
             score_diff = st.number_input(
                 "Score differential (offense - defense)",
                 min_value=-40,
@@ -273,6 +272,7 @@ def build_input_form():
                 index=0,
             )
 
+    # ---------------- Environment ----------------
     with st.expander("Environment", expanded=True):
         c1, c2, c3 = st.columns(3)
 
@@ -326,17 +326,11 @@ def build_input_form():
                 help="If you don't have this, leave at 0.50.",
             )
 
+    # ---------------- Kicker profile ----------------
     with st.expander("Kicker profile", expanded=True):
-        c1, c2, c3 = st.columns(3)
+        c1, c2 = st.columns(2)
 
         with c1:
-            kicker_name = st.text_input(
-                "Kicker name",
-                value="Kicker Name",
-                help="Used as a categorical feature.",
-            )
-
-        with c2:
             career_attempts = st.number_input(
                 "Career FG attempts (before this kick)",
                 min_value=0,
@@ -345,7 +339,7 @@ def build_input_form():
                 step=1,
             )
 
-        with c3:
+        with c2:
             career_fg_pct = st.slider(
                 "Career FG% (0 - 1.0)",
                 min_value=0.0,
@@ -354,7 +348,7 @@ def build_input_form():
                 step=0.01,
             )
 
-    # Binary encodings
+    # ---------------- Binary encodings ----------------
     season_type_binary = 1 if season_type == "Postseason" else 0
     roof_binary = 1 if roof == "Closed" else 0
     surface_binary = 1 if surface == "Turf" else 0
@@ -369,7 +363,6 @@ def build_input_form():
             "temp": float(temp),
             "wind": float(wind),
             "season_type_binary": int(season_type_binary),
-            # NOTE: target field_goal_result_binary is NOT included here
             "roof_binary": int(roof_binary),
             "surface_binary": int(surface_binary),
             "altitude": float(altitude),
@@ -385,6 +378,7 @@ def build_input_form():
     )
 
     return row
+
 
 
 # ---------------------------------------------------------
@@ -442,12 +436,12 @@ def main():
                 f"""
                 **Interpretation**
 
-                Given a **{int(input_df['kick_distance'].iloc[0])}-yard** attempt
+                Given a **{int(input_df['kick_distance'].iloc[0])}-yard** attempt 
                 this model estimates roughly a **{p_make*100:.1f}%** chance of a make.
 
                 Remember: this is a **probabilistic** model, not a guarantee. 
                 Edge cases (extreme weather, injuries, botched snaps) may behave very differently.
-                This model does NOT account for blocked kicks or other unusual events.
+                This model does NOT account for blocked kicks.
                 """
             )
         except Exception as e:
