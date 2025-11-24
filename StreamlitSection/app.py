@@ -398,16 +398,13 @@ def main():
         layout="wide",
     )
 
-    st.title("🏈 Kickers Galore – Field Goal Make Probability")
+    st.title("Kickers Galore – Field Goal Make Probability")
     st.markdown(
         """
-        This app uses Quinton Peters' **weighted ensemble model** to estimate the chance a field goal is made,
-        given game, environment, and kicker context.
-
         This model was fine tuned on over 10,000 NFL kicks and combines multiple machine learning algorithms
         (LightGBM, GAM, Bagging, Logistic Regression) to provide robust predictions.
 
-        Please be patient when loading the model; it should take several minutes.
+        **Please be patient when loading the model; it should take several minutes.**
         """
     )
 
