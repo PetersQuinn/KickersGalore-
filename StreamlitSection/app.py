@@ -123,6 +123,86 @@ ENSEMBLE_WEIGHTS = {
 DATA_PATH = Path(__file__).resolve().parent / "data_for_streamlit.csv"
 
 
+def model_overview_panel():
+    with st.expander("📘 About this model (click to expand)", expanded=False):
+        st.markdown(
+            """
+### What this app does
+
+This app estimates the **probability that an NFL field goal is made** given:
+- Game context (score, quarter, pressure)
+- Environment (distance, temperature, wind, roof, surface, altitude, weather)
+- A simple kicker profile (career attempts and career FG%)
+
+The goal isn’t just to say *“make”* or *“miss”*, but to provide a **calibrated probability** that can support
+*kick vs go-for-it vs punt* decisions.
+
+---
+
+### Data & features
+
+The model was trained on **12,449 NFL field goal attempts** from recent seasons, filtered to standard kicks
+(no blocks, no obviously corrupted plays).  
+For each kick, we engineered features such as:
+
+- **Distance & game state:** kick distance, score differential, 4th quarter, “buzzer-beater” flag  
+- **Environment:** temperature, wind speed, rain/snow flags, roof (open/closed), surface (grass/turf), stadium altitude  
+- **Market/context:** a compressed **Vegas win probability** before the kick  
+- **Kicker profile:** career attempts and career FG% *before* that kick (to avoid data leakage)
+
+Distance turns out to be the dominant driver, but these context variables help shape the probability curve.
+
+---
+
+### Modeling approach
+
+I trained several model families:
+
+- **Logistic Regression** – simple, interpretable baseline  
+- **Bayesian-style Logistic Regression** – LR with strong L2 shrinkage  
+- **GAM (Generalized Additive Model)** – allows smooth nonlinear curves, especially for distance  
+- **Bagging (Decision Tree ensemble)** – reduces variance, captures interactions  
+- **LightGBM** – gradient boosting for more complex nonlinear patterns  
+- **BART** – Bayesian Additive Regression Trees, used for both prediction and causal analysis
+
+Models were tuned mainly on **Brier Score** (a proper scoring rule for probabilities), then
+**calibrated per distance band** using isotonic regression. This helps ensure that, for example,
+40–49 yard kicks have realistic, monotone risk curves.
+
+Evaluation was done on a **held-out 2024 season** to mimic real predictive use.
+
+---
+
+### Final ensemble
+
+Instead of relying on a single model, I use a **weighted ensemble**:
+
+> 0.10 × Bagging + 0.35 × LightGBM + 0.40 × GAM + 0.15 × Logistic Regression
+
+On held-out 2024 data, this ensemble achieved:
+
+- **Brier Score:** 0.10976  
+- **Good calibration** across common kick distances  
+- **Stable behavior** (no wild overfitting to rare, extreme scenarios)
+
+In short: if the model says ~78%, it behaves like ~78% in the data.
+
+---
+
+### How to interpret the output
+
+The prediction you see is **not a guarantee**, it’s a **probability** based on historical patterns
+and the inputs you provide. It:
+
+- Works best for “normal” NFL kicks (30–55 yards, typical weather)  
+- Is less reliable for extreme situations (very long kicks, wild weather, tiny sample scenarios)  
+
+The idea is to **reduce guesswork** in kick decisions and provide a more informed view of risk,
+not to replace coaching judgment—especially on the season-defining, “Double Doink” type moments.
+            """
+        )
+
+
 def build_preprocessor():
     numeric_cols = [c for c in FEATURE_COLS if c not in CATEGORICAL_COLS]
     return ColumnTransformer(
@@ -393,6 +473,9 @@ def main():
     )
 
     st.title("Kickers Galore – Field Goal Make Probability")
+
+    model_overview_panel() 
+    
     st.markdown(
         """
         This model was fine tuned on over 10,000 NFL kicks and combines multiple machine learning algorithms
